@@ -1,0 +1,303 @@
+select case when rcvlin.vc_rcvlin_vfld1 is null
+     and ib_trlr.trlr_num is null
+     and invlod.lodnum is null then '0. ASN Found in JDA but Trailer has not Arrived'
+         when (rcvlin.vc_rcvlin_vfld1 is not null or (rcvinv.vc_rcvinv_vfld1 is null and rcvinv.invnum like 'TRL%' and rcvlin.expqty = 0))
+     and ib_trlr.trlr_num is not null
+     and ib_trlr.trlr_stat = 'EX'
+     and ib_trlr.trlr_COD <> 'SHIP'
+     and invlod.lodnum is null then '1. Inbound Trailer Not Arrived in Yard'
+         when (rcvlin.vc_rcvlin_vfld1 is not null or (rcvinv.vc_rcvinv_vfld1 is null and rcvinv.invnum like 'TRL%' and rcvlin.expqty = 0))
+     and ib_trlr.trlr_num is not null
+     and ib_trlr.trlr_stat <> 'D'
+     and ib_trlr.trlr_stat <> 'EX'
+     and ib_trlr.trlr_COD <> 'SHIP'
+     and ib_trlr.yard_loc not like 'D%'
+     and invlod.lodnum is null then '2. Inbound Trailer in Yard'
+         when (rcvlin.vc_rcvlin_vfld1 is not null or (rcvinv.vc_rcvinv_vfld1 is null and rcvinv.invnum like 'TRL%' and rcvlin.expqty = 0))
+     and ib_trlr.trlr_num is not null
+     and ib_trlr.trlr_stat <> 'D'
+     and ib_trlr.trlr_stat <> 'EX'
+     and ib_trlr.trlr_COD <> 'SHIP'
+     and ib_trlr.yard_loc like 'D%'
+     and invlod.lodnum is null then '2. Inbound Trailer at Door'
+         when (rcvlin.vc_rcvlin_vfld1 is not null or (rcvinv.vc_rcvinv_vfld1 is null and rcvinv.invnum like 'TRL%' and rcvlin.expqty = 0))
+     and ib_trlr.trlr_num is not null
+     and (ib_trlr.trlr_stat = 'D' or ib_trlr.trlr_COD = 'SHIP')
+     and invlod.lodnum is null then 'OSD issue (record is incomplete but inbound trailer is closed)'
+         when (rcvlin.vc_rcvlin_vfld1 is not null or (rcvinv.vc_rcvinv_vfld1 is null and rcvinv.invnum like 'TRL%' and rcvlin.expqty = 0))
+     and ib_trlr.trlr_num is not null
+     and (aremst.stgflg = 1 or aremst.arecod = 'RDTS')
+     and locmst.stoloc not in ('OSD', 'OSDC1')
+     and invlod.lodnum is not null then '3. Freight is Currently in Staging'
+         when (rcvlin.vc_rcvlin_vfld1 is not null or (rcvinv.vc_rcvinv_vfld1 is null and rcvinv.invnum like 'TRL%' and rcvlin.expqty = 0))
+     and ib_trlr.trlr_num is not null
+     and locmst.stoloc in ('OSD', 'OSDC1')
+     and invlod.lodnum is not null then 'OSD issue (Freight is in ' || invlod.stoloc || ')'
+         when (rcvlin.vc_rcvlin_vfld1 is not null or (rcvinv.vc_rcvinv_vfld1 is null and rcvinv.invnum like 'TRL%' and rcvlin.expqty = 0))
+     and ib_trlr.trlr_num is not null
+     and invlod.lodnum is not null
+     and invlod.stoloc = ob_trlr.trlr_id
+     and ob_trlr.close_dte is null then '4. Freight is in a Loading Trailer'
+         when (rcvlin.vc_rcvlin_vfld1 is not null or (rcvinv.vc_rcvinv_vfld1 is null and rcvinv.invnum like 'TRL%' and rcvlin.expqty = 0))
+     and ib_trlr.trlr_num is not null
+     and ob_trlr.trlr_num is not null
+     and nvl(vdispatch.dispatch_dte, ob_trlr.dispatch_dte) is null
+     and ob_trlr.close_dte is not null
+     and invlod.lodnum is not null then '5. Freight is Loaded Outbound'
+         when (rcvlin.vc_rcvlin_vfld1 is not null or (rcvinv.vc_rcvinv_vfld1 is null and rcvinv.invnum like 'TRL%' and rcvlin.expqty = 0))
+     and ib_trlr.trlr_num is not null
+     and invlod.lodnum is not null
+     and ob_trlr.trlr_num is not null
+     and nvl(vdispatch.dispatch_dte, ob_trlr.dispatch_dte) is not null
+     and ob_trlr.close_dte is not null then '6. Freight is Dispatched Outbound'
+         else 'Other/Unknown'
+    end Status,
+    rcvlin.vc_rcvlin_vfld9 ShipTo,
+    rcvlin.vc_rcvlin_vfld10 Ultimate,
+    rcvlin.prtnum Part,
+    nvl(rcvlin.vc_rcvlin_vfld2, rcvlin.supnum) Supplier,
+    rcvlin.vc_rcvlin_vfld18 ShipFrom,
+    rcvlin.vc_rcvlin_vfld7 Packslip,
+    rcvlin.vc_rcvlin_vfld8 BOL,
+    rcvlin.expqty ExpectedQuantity,
+    rcvlin.rcvqty ReceivedQuantity,
+    nvl(ib_appt.vc_appt_vfld1, ib_trlr.vc_trlr_vfld3) IBRoute,
+    ib_trlr.carcod SCAC,
+    ib_trlr.trlr_num Trailer,
+    ib_trlr.yard_loc,
+    ib_trlr.arrdte Arrival,
+    ord_line.vc_ordlin_vfld4 OrderOBRoute,
+    newest_order.vc_ordlin_vfld4 LatestOBRoute,
+    case when ob_appt.car_move_id = null then null
+         else replace('B' || substr(ob_appt.car_move_id, 4) || vc_rcvlin_vfld9, ' ', '')
+    end OBBOL,
+    ob_trlr.vc_trlr_vfld4 OBRoute,
+    ob_trlr.carcod OBSCAC,
+    ob_trlr.trlr_num OBTrailer,
+    ob_trlr.yard_loc,
+    ob_trlr.close_dte CloseDate,
+    nvl(vdispatch.dispatch_dte, ob_trlr.dispatch_dte) DispatchDate,
+    rcvlin.wh_id warehouse,
+    les_mls_cat.mls_text Customer,
+    ib_trlr.trlr_id trailerid,
+    to_date(ib_trlr.vc_trlr_vfld1, 'YYYYMMDDHH24MISS') PChkStart,
+    to_date(ib_trlr.vc_trlr_vfld2, 'YYYYMMDDHH24MISS') PChkEnd,
+    rcvtrk.mod_usr_id Paperchecker,
+    case when rcvinv.vc_rcvinv_vfld4 = 'UPLOAD' then 'ASN Editor'
+         when rcvinv.invnum like 'RCV%' then 'Manual Add'
+         when rcvinv.vc_rcvinv_vfld1 is null
+     and rcvinv.invnum like 'TRL%' then 'Blind Reciepted'
+         else 'ASN Received'
+    end ASN,
+    rcvinv.moddte ASNAddTime,
+    oldrcvtrk.trkref ASNTrailer,
+    rcvlin.frhsta SID,
+    rcvlin.vc_rcvlin_vfld19 PONumber,
+    ord.ordnum OrderNumber,
+    prtmst.vc_prtmst_vfld5 HazClass,
+    prtmst.vc_prtmst_vfld3 HazDesc,
+    prtmst.vc_prtmst_vfld2 HazPG,
+    rcvlin.vc_rcvlin_vfld14 AETC,
+    rcvlin.rcvkey RecKey,
+    rcvlin.invnum IvtNum,
+    rcvlin.vc_rcvlin_vfld1 OrigIvtNum,
+    rcvlin.vc_rcvlin_vfld3 OrigTrkNum,
+    prtftp_dtl.grswgt PieceWeight,
+    rcvlin.rcvqty * prtftp_dtl.grswgt TotalWeight,
+    invlod.lodnum Lodnum,
+    invdtl.dtlnum,
+    invdtl.untqty ScanQty,
+    invdtl.untqty * prtftp_dtl.grswgt ScanWeight,
+    invdtl.ship_line_id ShipLineID,
+    invdtl.lst_usr_id ScanOffUser,
+    invlod.adddte ScanOffDate,
+    invlod.lst_usr_id LastScanUser,
+    invlod.lstdte LastScanDate,
+    invlod.stoloc StorageLocation,
+    car_move.car_move_id MasterBOL,
+    stop.stop_id Stop,
+    stop.track_num pro_num,
+    --stop.adr_id stop_address,
+    --stop_adrmst.host_ext_id stop_host_ext_id,
+    --stop_adrmst.adrnam stop_adrmst_adrnam,
+    --stop_adrmst.adrln1 stop_adrmst_adrln1,
+    --stop_adrmst.adrln2 stop_adrmst_adrln2,
+    --stop_adrmst.adrln3 stop_adrmst_adrln3,
+    --stop_adrmst.adrcty stop_adrmst_adrcty,
+    --stop_adrmst.adrstc stop_adrmst_adrstc,
+    --stop_adrmst.adrpsz stop_adrmst_adrpsz,
+    --wh_adrmst.host_ext_id wh_host_ext_id,
+    --wh_adrmst.adrnam wh_adrmst_adrnam,
+    --wh_adrmst.adrln1 wh_adrmst_adrln1,
+    --wh_adrmst.adrln2 wh_adrmst_adrln2,
+    --wh_adrmst.adrln3 wh_adrmst_adrln3,
+    --wh_adrmst.adrcty wh_adrmst_adrcty,
+    --wh_adrmst.adrstc wh_adrmst_adrstc,
+    --wh_adrmst.adrpsz wh_adrmst_adrpsz,
+    ob_trlr.trlr_typ trailer_type,
+    ob_trlr.trlr_seal1 TrailerSeal,
+    ob_trlr.trlr_seal2 PenskeLoadID,
+    ob_appt.start_dte ApptStart,
+    case when ob_trlr.close_dte is not null then car_move.mod_usr_id
+         else ''
+    end ClosedBy,
+    nvl(vdispatch.dispatch_dte, ob_trlr.dispatch_dte) DispatchDate,
+    case when nvl(vdispatch.dispatch_dte, ob_trlr.dispatch_dte) is not null then ob_trlr.mod_usr_id
+         else ''
+    end DispatchedBy 
+        
+        
+   from rcvlin
+   left outer
+   join rcvinv
+     on nvl(rcvlin.vc_rcvlin_vfld1, rcvlin.invnum) = rcvinv.invnum
+    and rcvlin.wh_id = rcvinv.wh_id
+   left outer
+   join rcvtrk
+     on rcvlin.trknum = rcvtrk.trknum
+    and rcvlin.wh_id = rcvtrk.wh_id
+   left outer
+   join rcvtrk oldrcvtrk
+     on nvl(rcvlin.vc_rcvlin_vfld1, rcvlin.trknum) = oldrcvtrk.trknum
+    and rcvlin.wh_id = oldrcvtrk.wh_id
+   left outer
+   join trlr ib_trlr
+     on rcvtrk.trlr_id = ib_trlr.trlr_id
+    and rcvlin.wh_id = ib_trlr.stoloc_wh_id
+   left outer
+   join appt ib_appt
+     on nvl(ib_trlr.vc_trlr_vfld10, ib_trlr.appt_id) = ib_appt.appt_id
+    and rcvlin.wh_id = ib_appt.wh_id
+   join prtmst
+     on rcvlin.prtnum = prtmst.prtnum
+    and prtmst.wh_id_tmpl = rcvlin.wh_id
+    and prtmst.prtfam = 'PART'
+   join prtftp_dtl
+     on rcvlin.prtnum = prtftp_dtl.prtnum
+    and rcvlin.wh_id = prtftp_dtl.wh_id
+    and prtftp_dtl.uomcod = 'EA'
+   join adrmst sup_adrmst
+     on nvl(rcvlin.vc_rcvlin_vfld2, rcvlin.supnum) = sup_adrmst.host_ext_id
+   join wh
+     on rcvlin.wh_id = wh.wh_id
+   join adrmst wh_adrmst
+     on wh.adr_id = wh_adrmst.adr_id
+   left outer
+   join (select ord_line.wh_id,
+            ord_line.prtnum,
+            ord_line.vc_ordlin_vfld2,
+            ord_line.ordnum,
+            ord_line.vc_ordlin_vfld4
+            from
+                (select ord_line.wh_id,
+                ord_line.prtnum,
+                ord_line.vc_ordlin_vfld2,
+                max(ord_line.ordnum) ordnum
+            from ord_line
+            where ord_line.moddte > sysdate - 90
+            group by ord_line.wh_id,
+                ord_line.prtnum,
+                ord_line.vc_ordlin_vfld2) orders,
+                ord_line
+        where ord_line.ordnum = orders.ordnum) newest_order
+     on rcvlin.vc_rcvlin_vfld10 = newest_order.vc_ordlin_vfld2
+    and rcvlin.prtnum = newest_order.prtnum
+    and rcvlin.wh_id = newest_order.wh_id
+   left outer
+   join les_mls_cat
+     on upper('vc_rcvlin_vfld10=' || rcvlin.vc_rcvlin_vfld10) = upper(les_mls_cat.mls_id)
+   left outer
+   join invdtl
+     on rcvlin.rcvkey = invdtl.rcvkey
+   left outer
+   join invsub
+     on invdtl.subnum = invsub.subnum
+   left outer
+   join invlod
+     on invsub.lodnum = invlod.lodnum
+   left outer
+   join locmst
+     on invlod.stoloc = locmst.stoloc
+    and rcvlin.wh_id = locmst.wh_id
+   left outer
+   join aremst
+     on locmst.arecod = aremst.arecod
+    and rcvlin.wh_id = aremst.wh_id
+   left outer
+   join trlr ob_trlr
+     on invlod.stoloc = ob_trlr.trlr_id
+    and rcvlin.wh_id = ob_trlr.stoloc_wh_id
+   left outer
+   join car_move
+     on ob_trlr.trlr_id = car_move.trlr_id
+    and rcvlin.wh_id = car_move.wh_id
+   left outer
+   join appt ob_appt
+     on ob_trlr.appt_id = ob_appt.appt_id
+    and rcvlin.wh_id = ob_appt.wh_id
+   left outer
+   join shipment_line
+     on invdtl.ship_line_id = shipment_line.ship_line_id
+    and rcvlin.wh_id = shipment_line.wh_id
+   left outer
+   join shipment
+     on shipment_line.ship_id = shipment.ship_id
+    and rcvlin.wh_id = shipment.wh_id
+   left outer
+   join ord_line
+     on shipment_line.ordnum = ord_line.ordnum
+    and shipment_line.ordlin = ord_line.ordlin
+    and shipment_line.ordsln = ord_line.ordsln
+    and shipment_line.wh_id = ord_line.wh_id
+   left outer
+   join ord
+     on ord_line.ordnum = ord.ordnum
+    and rcvlin.wh_id = ord.wh_id
+   left outer
+   join stop
+     on shipment.stop_id = stop.stop_id
+   left outer
+   join adrmst stop_adrmst
+     on stop.adr_id = stop_adrmst.adr_id
+   left outer
+   join (select min(trndte) dispatch_dte,
+                trlr_id
+           from trlract
+          WHERE trlract.actcod = 'TDSP'
+          group by trlr_id) vdispatch
+     on ob_trlr.trlr_id = vdispatch.trlr_id
+  WHERE
+ /* enter search fields below */
+ --wh.wh_id = ''                                       /* Warehouse  */
+ --les_mls_cat = ''                                    /* Customer     */ /* "CHRYSLER", "DTNA AM", "DTNA PROD", "MOPAR FPDC", "MOPAR NPDC", "MOPAR PLANT" */
+ --rcvlin.vc_rcvlin_vfld8 = ''                         /* BOL          */
+ --rcvlin.vc_rcvlin_vfld7 = ''                         /* Packslip     */
+ --rcvlin.frhsta = ''                                  /* DTNA SID     */
+ --rcvlin.vc_rcvlin_vfld19 = ''                        /* DTNA AM PO   */
+ --rcvlin.prtnum = ''                                  /* Part Number  */
+ --rcvlin.vc_rcvlin_vfld18 = ''                        /* Ship From    */
+ --nvl(rcvlin.vc_rcvlin_vfld2, rcvlin.supnum) = ''     /* Supplier     */
+ --rcvlin.vc_rcvlin_vfld9 = ''                         /* Ship To      */
+ --rcvlin.vc_rcvlin_vfld10 = ''                        /* Ultimate Dest*/
+ --newest_order.vc_ordlin_vfld4 = ''                   /* OB Route ID  */
+ --stop.track_num = ''                                 /* Pro Number   */
+ --oldrcvtrk.trkref like '%%'                          /* ASN Trailer  */
+ --trlr.trlr_id = ''                                   /* IB Trailer ID*/
+ --ib_trlr.trlr_num = ''                               /* IB Trailer Num   */
+ --upper(trlr.vc_trlr_vfld3)like '%%'                  /* IB Route Num */
+ --ob_trlr.trlr_id = ''                                /* OB Trailer ID*/
+ --ob_trlr.trlr_num = ''                               /* OB Trailer Num   */
+ --ob_trlr.vc_trlr_vfld4 = ''                          /* OB Route Num */
+ --rcvlin.rcvkey = ''                                  /* Receive Key  */
+ --invlod.lodnum = ''                                  /* Load ID      */
+ --ord.ordnum = ''                                     /* Order number */
+ --shipment_line.ship_line_id = ''                     /* Ship Line ID */
+ --shipment.ship_id = ''                               /* Shipment ID  */
+ --ib_appt.appt_id = ''                                /* IB Appointment ID    */
+ --ob_appt.appt_id = ''                                /* OB Appointment ID    */
+ --car_move.car_move_id = ''                           /* Carrier Move ID  */
+ --stop.stop_id = ''                                   /* Stop ID  */
+ --locmst.stoloc = ''                                  /* Storage Location */
+ --aremst.arecod = ''                                  /* Storage Area */
+ 
+ rcvlin.vc_rcvlin_vfld7 = ''
